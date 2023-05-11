@@ -4,6 +4,7 @@ contract InvestmentDAO =
 
     record state = {
         members : map(address, bool),
+        exp : map(address, int),
         proposalCount : int,
         proposals : map(int, proposal),
         apy: int}
@@ -22,12 +23,14 @@ contract InvestmentDAO =
     // Init 
     stateful entrypoint init() = 
         { members = {},
+            exp = {},
             proposalCount = 0,
             proposals = {},
             apy = 20}
     
     // Join DAO
     stateful entrypoint joinDAO() =
+        put(state{ exp[Call.caller] = 0 })
         put(state{ members[Call.caller] = true })
 
     // Check if user join DAO or not
@@ -47,6 +50,8 @@ contract InvestmentDAO =
                             status = 0}
         put(state{ proposalCount = newProposalId,
                    proposals[newProposalId] = newProposal })
+        let exp = state.exp[Call.caller] + 10
+        put(state{exp[Call.caller] = exp})
 
  
 
@@ -66,7 +71,8 @@ contract InvestmentDAO =
             put(state{proposals[proposalId].vote_for = proposal.vote_for + 1})
         else 
             put(state{proposals[proposalId].vote_for = proposal.vote_again + 1})
-
+        let exp = state.exp[Call.caller] + 1
+        put(state{exp[Call.caller] = exp})
 
     stateful entrypoint endProposal (proposalId: int) =
         require(Map.member(Call.caller, state.members), "You are not a member of the DAO")
@@ -88,6 +94,15 @@ contract InvestmentDAO =
         let reward = proposal.votes[Call.caller]*(1+state.apy*proposal.duration/(24*60*60*100))
         Chain.spend(Contract.address,reward)
         put(state{proposals[proposalId].votes[Call.caller] = 0})
+
+    stateful entrypoint checkReward(proposalId: int) :int = 
+        let proposal = state.proposals[proposalId]
+        state.proposals[proposalId].votes[Call.caller]
+
+    stateful entrypoint checkExp() :int = 
+        state.exp[Call.caller]
+
+       
 
         
 
