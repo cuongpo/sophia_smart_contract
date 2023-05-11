@@ -1,0 +1,94 @@
+@compiler >= 6
+
+contract InvestmentDAO =
+
+    record state = {
+        members : map(address, bool),
+        proposalCount : int,
+        proposals : map(int, proposal),
+        apy: int}
+
+    record proposal = {
+        id : int,
+        creator: address,
+        description : string,
+        votes: map(address, int),
+        vote_for: int,
+        vote_again: int,
+        time_begin: int,
+        duration: int,
+        status: int}
+
+    // Init 
+    stateful entrypoint init() = 
+        { members = {},
+            proposalCount = 0,
+            proposals = {},
+            apy = 20}
+    
+    // Join DAO
+    stateful entrypoint joinDAO() =
+        put(state{ members[Call.caller] = true })
+
+    // Check if user join DAO or not
+    entrypoint isMember(member: address) : bool =
+        Map.member(member, state.members)
+
+    stateful entrypoint createProposal(description: string, _duration: int) =
+        let newProposalId = state.proposalCount + 1
+        let newProposal = { id = newProposalId,
+                            creator = Call.caller,
+                            description = description,
+                            votes = {},
+                            vote_for = 0,
+                            vote_again = 0,
+                            time_begin = Chain.timestamp,
+                            duration = _duration,
+                            status = 0}
+        put(state{ proposalCount = newProposalId,
+                   proposals[newProposalId] = newProposal })
+
+ 
+
+    stateful entrypoint vote(proposalId: int, _amount: int, _vote: bool) =
+        let proposal = state.proposals[proposalId]
+        require(proposal.status == 0,"Proposal ended")
+        require(Map.member(Call.caller, state.members), "You are not a member of the DAO")
+        require(Map.member(proposalId, state.proposals), "Invalid proposal ID")
+        require(!Map.member(Call.caller, proposal.votes), "You have already voted on this proposal")
+        require(Call.value >= _amount, "Not enough money to Vote: ")
+
+        Chain.spend(Contract.address,_amount)
+
+        put(state{proposals[proposalId].votes[Call.caller] = _amount})
+
+        if (_vote)
+            put(state{proposals[proposalId].vote_for = proposal.vote_for + 1})
+        else 
+            put(state{proposals[proposalId].vote_for = proposal.vote_again + 1})
+
+
+    stateful entrypoint endProposal (proposalId: int) =
+        require(Map.member(Call.caller, state.members), "You are not a member of the DAO")
+        require(Map.member(proposalId, state.proposals), "Invalid proposal ID")
+        let proposal = state.proposals[proposalId]
+        let time_end = proposal.time_begin + proposal.duration
+        if (Chain.timestamp >  time_end)
+            if (proposal.vote_for > proposal.vote_again)
+                put(state{proposals[proposalId].status = 1})
+            else 
+                put(state{proposals[proposalId].status = 2})
+
+    stateful entrypoint withDraw (proposalId: int) = 
+        let proposal = state.proposals[proposalId]
+        require(Map.member(Call.caller, state.members), "You are not a member of the DAO")
+        require(Map.member(proposalId, state.proposals), "Invalid proposal ID")
+        require(proposal.votes[Call.caller] > 0, "You didn't vote this time or your reward was withdrawed")
+        
+        let reward = proposal.votes[Call.caller]*(1+state.apy*proposal.duration/(24*60*60*100))
+        Chain.spend(Contract.address,reward)
+        put(state{proposals[proposalId].votes[Call.caller] = 0})
+
+        
+
+    
